@@ -70,4 +70,4 @@ xposed-api/            compile-only stubs of the legacy Xposed API
 
 ## License
 
-Add a `LICENSE` file before publishing (GPL-3.0 or Apache-2.0 are common choices for Xposed modules).
+Protected by GNU General Public License v3.0
