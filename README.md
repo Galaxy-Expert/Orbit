@@ -3,12 +3,21 @@
 Dynamic-island style notifications **around your camera cutout** for AOSP-based ROMs.
 An open-source Xposed module for **Vector (LSPosed)**.
 
-> Status: **0.1 alpha**. Target: **LineageOS 24 (Android 17)**, phones with a **centered punch-hole camera**.
+> Status: **0.1 alpha**. Target: **LineageOS 23.2 (Android 16)**. Older Android versions are not planned.
+
+## Camera layouts
+
+| Device | Behaviour |
+|---|---|
+| Punch-hole in the **center** | Island grows from the camera, centered |
+| Punch-hole on the **left / right** | Island grows from the camera and slides inward so it never leaves the screen |
+| **No camera cutout** (tablets, older phones) | A black **capsule (ellipse)** at the right of the status bar acts as the island |
+| Cutout not on the top edge (e.g. phone in landscape) | Island is hidden |
 
 ## What 0.1 does
 
-- Black pill that hugs the camera cutout (position auto-detected)
-- Every few seconds a short **orbit ring** spins around the camera
+- Black pill that hugs the camera cutout (position auto-detected, fine-tune offsets in the app)
+- Every few seconds a short **orbit ring** spins around the camera (or around the capsule)
 - System heads-up notifications are replaced by an island animation (spring); tap to open, swipe up to dismiss
 - Tap the camera area for a small menu: **Notifications** (opens the shade) and **Settings**
 - Status bar icons are hidden, the **clock stays**
@@ -16,7 +25,7 @@ An open-source Xposed module for **Vector (LSPosed)**.
 - Calls, alarms, ongoing/foreground-service and full-screen notifications are left to the system on purpose
 - Nothing is shown on the lock screen
 
-Not in 0.1: media, calls, charging, per-app filters, off-center cutouts, tablets, landscape.
+Not in 0.1: media, calls, charging, per-app filters.
 
 ## Install
 
@@ -24,16 +33,32 @@ Not in 0.1: media, calls, charging, per-app filters, off-center cutouts, tablets
 2. Restart System UI (reboot, or `su -c killall com.android.systemui`).
 3. Open the Orbit app -> **Send test notification**, go home and wait 3 seconds.
 
-## Build
+## Build, signing and releases
 
-GitHub Actions builds a debug APK on every push (see `.github/workflows/build.yml`).
-Download it from the run's **Artifacts**. Locally: `gradle :app:assembleDebug` (JDK 17, Android SDK).
+GitHub Actions builds a **signed release APK** named `Orbit-v<version>.apk` on every push.
+Download it from the run's **Artifacts**, or from **Releases** when you push a tag such as `v0.1.0`
+(creating a Release on GitHub with a new tag works too).
+
+To make updates install **over** the previous version (no uninstall needed) the APK must always be signed with
+the same key. Create one keystore, keep a backup, and add these **repository secrets**
+(Settings -> Secrets and variables -> Actions):
+
+| Secret | Content |
+|---|---|
+| `ORBIT_KEYSTORE_BASE64` | the keystore file, base64 encoded (`base64 -w0 orbit.jks`) |
+| `ORBIT_KEYSTORE_PASSWORD` | keystore password |
+| `ORBIT_KEY_ALIAS` | key alias (e.g. `orbit`) |
+| `ORBIT_KEY_PASSWORD` | key password (same as the keystore password for PKCS12) |
+
+Never commit the keystore. Without the secrets the build still works but is signed with a throwaway debug key.
+`versionCode` is taken from the Actions run number, so every build is newer than the last.
+
+Local build: `gradle :app:assembleRelease` (JDK 17, Android SDK).
 
 ## Debugging
 
-```
-adb logcat -s Orbit
-```
+Logs appear in **Vector -> Logs** (lines starting with `[Orbit]`) or via `adb logcat -s Orbit` /
+`su -c logcat -s Orbit`.
 
 SystemUI class and view-id names change between Android versions. The module logs which hooks and
 status bar ids were found:
@@ -45,6 +70,7 @@ status bar ids were found:
 | `status bar id '...': found/missing` | which icon containers could be hidden |
 | `...HeadsUpManager.showNotification hooks: N` | N = 0 means heads-up is not intercepted |
 | `window added (type=2024)` | island window was created |
+| `geometry applied: hole=... virtual=...` | detected camera position / virtual capsule |
 
 If a hook is missing, open the SystemUI APK of your ROM in jadx and update the names in
 `SystemUiHooks.kt` / `StatusBarCleaner.kt`.
@@ -70,4 +96,5 @@ xposed-api/            compile-only stubs of the legacy Xposed API
 
 ## License
 
-Protected by GNU General Public License v3.0
+Orbit is free software, licensed under the **GNU General Public License v3.0**.
+See the `LICENSE` file or <https://www.gnu.org/licenses/gpl-3.0.html>.

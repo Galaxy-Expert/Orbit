@@ -8,8 +8,10 @@ import android.app.Notification
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Rect
+import android.graphics.RectF
 import android.graphics.SweepGradient
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -31,11 +33,13 @@ import kotlin.math.max
 import kotlin.math.min
 
 /**
- * Kameranın (punch-hole) etrafındaki ada.
+ * Kameranın (punch-hole) çevresindeki ada. Kamera yoksa status bar'ın sağında elips şeklinde "sanal ada".
  *
- * - IDLE : görünmez dokunma alanı + belirli aralıklarla kamera çevresinde dönen halka (orbit)
+ * - IDLE : görünmez dokunma alanı (sanal modda siyah elips) + belirli aralıklarla dönen orbit halkası
  * - NOTIF: bildirim genişlemesi (spring animasyonu)
  * - MENU : kameraya dokununca küçük menü
+ *
+ * Genişleyen pill kameraya ortalanır; kamera kenara yakınsa (sol/sağ) ekran içinde kalacak şekilde kayar.
  *
  * NOT: Bu sınıf SystemUI sürecinde çalışır. Modülün kaynaklarına (R) dokunma, her şey kodla çizilir.
  */
@@ -52,9 +56,11 @@ class OrbitView(ctx: Context, private val host: Host) : FrameLayout(ctx) {
     enum class Mode { IDLE, NOTIF, MENU }
     private enum class Fade { IN, OUT, NONE }
 
-    class Geo(val cut: Rect, val screenW: Int, val screenH: Int)
+    /** cut: kamera deliği (ekran piksel koordinatı). virtual: gerçek kamera yok, sanal elips. */
+    class Geo(val cut: Rect, val screenW: Int, val screenH: Int, val virtual: Boolean)
 
-    var geo: Geo = Geo(Rect(0, 0, 0, 0), 1080, 2400)
+    var geo: Geo = Geo(Rect(0, 0, 0, 0), 1080, 2400, false)
+        private set
     var windowExpanded = false
     var mode = Mode.IDLE
         private set
@@ -134,6 +140,7 @@ class OrbitView(ctx: Context, private val host: Host) : FrameLayout(ctx) {
     private var anim: ValueAnimator? = null
     private var curW = 0
     private var curH = 0
+    private var curX = 0f
     private var current: StatusBarNotification? = null
     private val spring = TimeInterpolator { input ->
         (1.0 - Math.exp(-7.0 * input) * Math.cos(11.0 * input)).toFloat()
@@ -145,13 +152,16 @@ class OrbitView(ctx: Context, private val host: Host) : FrameLayout(ctx) {
         style = Paint.Style.STROKE
         strokeCap = Paint.Cap.ROUND
     }
+    private val ringRect = RectF()
+    private val ringMatrix = Matrix()
+    private var ringShader: SweepGradient? = null
+    private var ringRadius = 0f
+    private var ringCx = 0f
+    private var ringCy = 0f
     private var spinning = false
     private var spinAngle = 0f
     private var spinAlpha = 0
     private var spinAnim: ValueAnimator? = null
-    private var ringCx = 0f
-    private var ringCy = 0f
-    private var ringR = 0f
     private val spinRunnable = Runnable {
         val cfg = OrbitState.config
         if (cfg.orbitAnim && mode == Mode.IDLE && isAttachedToWindow && (power?.isInteractive != false)) {
@@ -167,7 +177,7 @@ class OrbitView(ctx: Context, private val host: Host) : FrameLayout(ctx) {
     init {
         setWillNotDraw(false)
         isClickable = true
-        addView(pill, FrameLayout.LayoutParams(dp(10), dp(10), Gravity.TOP or Gravity.CENTER_HORIZONTAL))
+        addView(pill, FrameLayout.LayoutParams(dp(10), dp(10), Gravity.TOP or Gravity.START))
 
         textCol.addView(titleView, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         textCol.addView(textView, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
@@ -209,21 +219,39 @@ class OrbitView(ctx: Context, private val host: Host) : FrameLayout(ctx) {
     //  Geometri
     // =========================================================
 
-    private fun pillTop(): Int = max(0, geo.cut.top - dp(2))
+    private fun edgeMargin(): Int = dp(12)
+
+    /** Gerçek kamerada pill deliği 2dp taşarak sarar; sanal elipste tam elips boyutundadır. */
+    private fun inflate(): Int = if (geo.virtual) 0 else dp(2)
+
+    private fun pillTop(): Int = max(0, geo.cut.top - inflate())
 
     fun compactSize(): Pair<Int, Int> {
         val c = geo.cut
-        return Pair(max(c.width() + dp(4), dp(20)), max(c.height() + dp(4), dp(20)))
+        val i = inflate()
+        return Pair(max(c.width() + 2 * i, dp(20)), max(c.height() + 2 * i, dp(16)))
     }
 
+    private fun compactLeft(): Int = geo.cut.centerX() - compactSize().first / 2
+
     fun pillSize(m: Mode): Pair<Int, Int> {
-        val maxW = min(geo.screenW - dp(24), dp(380))
-        val base = (geo.cut.bottom - pillTop()) + dp(6) // kamera altı boşluğu
+        val maxW = min(geo.screenW - 2 * edgeMargin(), dp(380))
+        // içeriğin başladığı yer: gerçek kamerada deliğin altı, sanal elipste üstten küçük boşluk
+        val base = if (geo.virtual) dp(10) else (geo.cut.bottom - pillTop()) + dp(6)
         return when (m) {
             Mode.NOTIF -> Pair(maxW, base + dp(48) + dp(10))
             Mode.MENU -> Pair(min(maxW, dp(260)), base + dp(40) + dp(10))
             Mode.IDLE -> compactSize()
         }
+    }
+
+    /** Pill'in ekran koordinatındaki sol kenarı: kameraya ortalı, ekran dışına taşarsa içeri kaydırılmış. */
+    private fun pillLeft(m: Mode): Int {
+        if (m == Mode.IDLE) return compactLeft()
+        val w = pillSize(m).first
+        val lo = edgeMargin()
+        val hi = max(lo, geo.screenW - w - edgeMargin())
+        return (geo.cut.centerX() - w / 2).coerceIn(lo, hi)
     }
 
     /** Pencerenin ekrandaki dikdörtgeni. Boştayken kamera çevresi, genişken tüm ada alanı. */
@@ -235,26 +263,33 @@ class OrbitView(ctx: Context, private val host: Host) : FrameLayout(ctx) {
         }
         val (nw, nh) = pillSize(Mode.NOTIF)
         val (mw, mh) = pillSize(Mode.MENU)
-        val w = max(nw, mw)
-        val h = max(nh, mh)
-        val left = (c.centerX() - w / 2).coerceIn(0, max(0, geo.screenW - w))
+        val nl = pillLeft(Mode.NOTIF)
+        val ml = pillLeft(Mode.MENU)
+        val cl = compactLeft()
+        val left = min(min(nl, ml), cl)
+        val right = max(max(nl + nw, ml + mw), cl + compactSize().first)
         val top = pillTop()
-        return Rect(left, top, left + w, top + h)
+        return Rect(left, top, right, top + max(nh, mh))
     }
 
     // =========================================================
     //  Genel API
     // =========================================================
 
+    fun applyGeo(g: Geo) {
+        geo = g
+        resetToIdle()
+    }
+
     fun showNotification(sbn: StatusBarNotification) {
         bind(sbn)
         removeCallbacks(collapseRunnable)
-        val (w, h) = pillSize(Mode.NOTIF)
         if (mode == Mode.IDLE) {
             openFromIdle(Mode.NOTIF)
         } else {
+            val (w, h) = pillSize(Mode.NOTIF)
             setMode(Mode.NOTIF)
-            animatePill(w, h, Fade.IN)
+            animatePill(w, h, (pillLeft(Mode.NOTIF) - windowRect(true).left).toFloat(), Fade.IN)
         }
         postDelayed(collapseRunnable, max(2, OrbitState.config.popupSec) * 1000L)
     }
@@ -267,7 +302,7 @@ class OrbitView(ctx: Context, private val host: Host) : FrameLayout(ctx) {
             Mode.NOTIF -> {
                 val (w, h) = pillSize(Mode.MENU)
                 setMode(Mode.MENU)
-                animatePill(w, h, Fade.IN)
+                animatePill(w, h, (pillLeft(Mode.MENU) - windowRect(true).left).toFloat(), Fade.IN)
             }
             Mode.MENU -> {
                 collapse()
@@ -281,10 +316,11 @@ class OrbitView(ctx: Context, private val host: Host) : FrameLayout(ctx) {
         removeCallbacks(collapseRunnable)
         if (mode == Mode.IDLE) return
         val (cw, ch) = compactSize()
-        animatePill(cw, ch, Fade.OUT) {
-            pill.visibility = View.GONE
+        val toX = (compactLeft() - windowRect(true).left).toFloat()
+        animatePill(cw, ch, toX, Fade.OUT) {
             mode = Mode.IDLE
             host.setExpandedWindow(false)
+            applyIdleLook()
             invalidate()
         }
     }
@@ -294,9 +330,9 @@ class OrbitView(ctx: Context, private val host: Host) : FrameLayout(ctx) {
         spinAnim?.cancel()
         spinning = false
         removeCallbacks(collapseRunnable)
-        pill.visibility = View.GONE
         mode = Mode.IDLE
         windowExpanded = false
+        applyIdleLook()
     }
 
     fun rescheduleSpin() = scheduleSpin()
@@ -328,13 +364,30 @@ class OrbitView(ctx: Context, private val host: Host) : FrameLayout(ctx) {
         menuRow.alpha = a
     }
 
-    private fun setPillSize(w: Int, h: Int) {
+    /** Boşta: gerçek kamerada pill görünmez, sanal modda siyah elips görünür. */
+    private fun applyIdleLook() {
+        showRow(Mode.IDLE)
+        val showCapsule = geo.virtual && OrbitState.config.virtualIdleVisible
+        if (showCapsule) {
+            val (cw, ch) = compactSize()
+            pill.visibility = View.VISIBLE
+            setContentAlpha(0f)
+            setPillGeo(cw, ch, (compactLeft() - windowRect(windowExpanded).left).toFloat())
+        } else {
+            pill.visibility = View.GONE
+        }
+    }
+
+    private fun setPillGeo(w: Int, h: Int, x: Float) {
         curW = w
         curH = h
+        curX = x
         val lp = pill.layoutParams
         lp.width = max(w, 1)
         lp.height = max(h, 1)
         pill.layoutParams = lp
+        pill.translationX = x
+        pill.translationY = (pillTop() - windowRect(windowExpanded).top).toFloat()
         pillBg.cornerRadius = min(h / 2f, dpf(32f))
     }
 
@@ -345,27 +398,31 @@ class OrbitView(ctx: Context, private val host: Host) : FrameLayout(ctx) {
         mode = target
         host.setExpandedWindow(true)
         val (cw, ch) = compactSize()
-        setPillSize(cw, ch)
+        val ex = windowRect(true)
+        setPillGeo(cw, ch, (compactLeft() - ex.left).toFloat())
         pill.visibility = View.VISIBLE
         showRow(target)
         setContentAlpha(0f)
         val (w, h) = pillSize(target)
+        val toX = (pillLeft(target) - ex.left).toFloat()
         // pencere yeniden boyutlansın diye bir kare bekle
-        postOnAnimation { animatePill(w, h, Fade.IN) }
+        postOnAnimation { animatePill(w, h, toX, Fade.IN) }
     }
 
-    private fun animatePill(toW: Int, toH: Int, fade: Fade, onEnd: (() -> Unit)? = null) {
+    private fun animatePill(toW: Int, toH: Int, toX: Float, fade: Fade, onEnd: (() -> Unit)? = null) {
         anim?.cancel()
         val fromW = curW
         val fromH = curH
+        val fromX = curX
         val a = ValueAnimator.ofFloat(0f, 1f)
         a.duration = if (fade == Fade.OUT) 300L else 460L
         a.interpolator = if (fade == Fade.OUT) AccelerateDecelerateInterpolator() else spring
         a.addUpdateListener { va ->
             val f = va.animatedValue as Float
-            setPillSize(
+            setPillGeo(
                 (fromW + (toW - fromW) * f).toInt(),
-                (fromH + (toH - fromH) * f).toInt()
+                (fromH + (toH - fromH) * f).toInt(),
+                fromX + (toX - fromX) * f
             )
             val t = (va.currentPlayTime.toFloat() / va.duration.toFloat()).coerceIn(0f, 1f)
             when (fade) {
@@ -432,22 +489,34 @@ class OrbitView(ctx: Context, private val host: Host) : FrameLayout(ctx) {
         if (spinning) return
         val c = geo.cut
         val wr = windowRect(false)
-        ringCx = c.exactCenterX() - wr.left
-        ringCy = c.exactCenterY() - wr.top
-        ringR = max(c.width(), c.height()) / 2f + dpf(3.5f)
+        val gap = dpf(3.5f)
+        // Halka kamera deliğini (ya da sanal elipsi) sarar; kutu kısa kenarın yarısı kadar yuvarlatılır
+        ringRect.set(
+            c.left - wr.left - gap,
+            c.top - wr.top - gap,
+            c.right - wr.left + gap,
+            c.bottom - wr.top + gap
+        )
+        ringRadius = min(ringRect.width(), ringRect.height()) / 2f
+        ringCx = ringRect.centerX()
+        ringCy = ringRect.centerY()
         ringPaint.strokeWidth = dpf(2.2f)
         val accent = OrbitState.config.accent
-        ringPaint.shader = SweepGradient(
+        val sh = SweepGradient(
             ringCx, ringCy,
             intArrayOf(accent and 0x00FFFFFF, accent),
             floatArrayOf(0f, 1f)
         )
+        ringShader = sh
+        ringPaint.shader = sh
         spinning = true
         val a = ValueAnimator.ofFloat(0f, 1f)
         a.duration = 1300L
         a.interpolator = DecelerateInterpolator(1.4f)
         a.addUpdateListener { va ->
             spinAngle = (va.animatedValue as Float) * 360f
+            ringMatrix.setRotate(spinAngle, ringCx, ringCy)
+            ringShader?.setLocalMatrix(ringMatrix)
             val t = (va.currentPlayTime.toFloat() / va.duration.toFloat()).coerceIn(0f, 1f)
             val k = min(1f, min(t / 0.15f, (1f - t) / 0.2f)).coerceIn(0f, 1f)
             spinAlpha = (k * 255f).toInt()
@@ -466,11 +535,8 @@ class OrbitView(ctx: Context, private val host: Host) : FrameLayout(ctx) {
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         if (!spinning || mode != Mode.IDLE) return
-        canvas.save()
-        canvas.rotate(spinAngle, ringCx, ringCy)
         ringPaint.alpha = spinAlpha
-        canvas.drawCircle(ringCx, ringCy, ringR, ringPaint)
-        canvas.restore()
+        canvas.drawRoundRect(ringRect, ringRadius, ringRadius, ringPaint)
     }
 
     override fun onAttachedToWindow() {

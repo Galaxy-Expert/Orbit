@@ -38,7 +38,8 @@ class SettingsActivity : Activity() {
         root.addView(label("Orbit", 28f, bold = true))
         root.addView(
             label(
-                "Dynamic-island style notifications around your camera cutout.\n" +
+                "Dynamic-island style notifications around your camera cutout " +
+                    "(center / left / right punch-hole). Without a camera, a capsule appears at the right of the status bar.\n" +
                     "Enable this module for System UI in Vector/LSPosed, then restart System UI (or reboot).",
                 14f, topDp = 8
             )
@@ -47,9 +48,11 @@ class SettingsActivity : Activity() {
         root.addView(switchRow("Enable Orbit", cfg.enabled) { save(cfg.copy(enabled = it)) })
         root.addView(switchRow("Hide status bar icons (keep clock)", cfg.hideStatusIcons) { save(cfg.copy(hideStatusIcons = it)) })
         root.addView(switchRow("Orbit ring animation", cfg.orbitAnim) { save(cfg.copy(orbitAnim = it)) })
+        root.addView(switchRow("Show idle capsule when there is no camera", cfg.virtualIdleVisible) { save(cfg.copy(virtualIdleVisible = it)) })
 
         root.addView(seekRow("Orbit ring interval", 3, 60, cfg.orbitIntervalSec, "s") { save(cfg.copy(orbitIntervalSec = it)) })
         root.addView(seekRow("Notification display time", 2, 10, cfg.popupSec, "s") { save(cfg.copy(popupSec = it)) })
+        root.addView(seekRow("Horizontal offset", -12, 12, cfg.offsetXdp, "dp") { save(cfg.copy(offsetXdp = it)) })
         root.addView(seekRow("Vertical offset", -12, 12, cfg.offsetYdp, "dp") { save(cfg.copy(offsetYdp = it)) })
 
         root.addView(Button(this).apply {

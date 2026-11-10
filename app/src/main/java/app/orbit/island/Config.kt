@@ -11,7 +11,9 @@ data class OrbitConfig(
     val orbitAnim: Boolean = true,
     val orbitIntervalSec: Int = 12,
     val popupSec: Int = 4,
+    val offsetXdp: Int = 0,
     val offsetYdp: Int = 0,
+    val virtualIdleVisible: Boolean = true,
     val accent: Int = DEFAULT_ACCENT
 ) {
     fun toBundle(): Bundle = Bundle().apply {
@@ -20,7 +22,9 @@ data class OrbitConfig(
         putBoolean("orbitAnim", orbitAnim)
         putInt("orbitIntervalSec", orbitIntervalSec)
         putInt("popupSec", popupSec)
+        putInt("offsetXdp", offsetXdp)
         putInt("offsetYdp", offsetYdp)
+        putBoolean("virtualIdleVisible", virtualIdleVisible)
         putInt("accent", accent)
     }
 
@@ -35,7 +39,9 @@ data class OrbitConfig(
                 orbitAnim = b.getBoolean("orbitAnim", d.orbitAnim),
                 orbitIntervalSec = b.getInt("orbitIntervalSec", d.orbitIntervalSec),
                 popupSec = b.getInt("popupSec", d.popupSec),
+                offsetXdp = b.getInt("offsetXdp", d.offsetXdp),
                 offsetYdp = b.getInt("offsetYdp", d.offsetYdp),
+                virtualIdleVisible = b.getBoolean("virtualIdleVisible", d.virtualIdleVisible),
                 accent = b.getInt("accent", d.accent)
             )
         }
@@ -57,7 +63,9 @@ object Prefs {
             orbitAnim = p.getBoolean("orbitAnim", d.orbitAnim),
             orbitIntervalSec = p.getInt("orbitIntervalSec", d.orbitIntervalSec),
             popupSec = p.getInt("popupSec", d.popupSec),
+            offsetXdp = p.getInt("offsetXdp", d.offsetXdp),
             offsetYdp = p.getInt("offsetYdp", d.offsetYdp),
+            virtualIdleVisible = p.getBoolean("virtualIdleVisible", d.virtualIdleVisible),
             accent = p.getInt("accent", d.accent)
         )
     }
@@ -69,7 +77,9 @@ object Prefs {
             .putBoolean("orbitAnim", c.orbitAnim)
             .putInt("orbitIntervalSec", c.orbitIntervalSec)
             .putInt("popupSec", c.popupSec)
+            .putInt("offsetXdp", c.offsetXdp)
             .putInt("offsetYdp", c.offsetYdp)
+            .putBoolean("virtualIdleVisible", c.virtualIdleVisible)
             .putInt("accent", c.accent)
             .apply()
         // SystemUI'ye "ayarlar değişti" haberi

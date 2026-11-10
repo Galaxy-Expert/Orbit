@@ -17,15 +17,22 @@ import android.os.SystemClock
 import android.service.notification.StatusBarNotification
 import android.view.Display
 import android.view.Gravity
-import android.view.Surface
 import android.view.WindowManager
 import de.robv.android.xposed.XposedHelpers
+import kotlin.math.min
 
 /**
  * Ada penceresini yönetir: kamera konumunu bulur, pencereyi ekler/günceller,
  * bildirimleri süzer ve OrbitView'a iletir.
+ *
+ * Kamera durumları:
+ *  - Ortada / solda / sağda punch-hole: delik konumu Display.getCutout() ile okunur
+ *  - Hiç çentik yok (tablet vb.): status bar'ın sağında elips şeklinde sanal ada
+ *  - Çentik var ama üst kenarda değil (ör. telefon yatayda): ada gizlenir
  */
 class OrbitController(private val ctx: Context) : OrbitView.Host {
+
+    private class Found(val rect: Rect, val virtual: Boolean)
 
     private val main = Handler(Looper.getMainLooper())
     private val wm: WindowManager = ctx.getSystemService(WindowManager::class.java)
@@ -109,21 +116,27 @@ class OrbitController(private val ctx: Context) : OrbitView.Host {
         try {
             val display = dm.getDisplay(Display.DEFAULT_DISPLAY) ?: return
             val cfg = OrbitState.config
-            // 0.1: sadece dikey mod
-            if (!cfg.enabled || display.rotation != Surface.ROTATION_0) {
+            if (!cfg.enabled) {
                 lastGeoKey = null
                 detach()
                 return
             }
             val size = Point()
             display.getRealSize(size)
-            val cut = findCutout(display, size)
-            val key = "${cut.left},${cut.top},${cut.right},${cut.bottom},${size.x},${size.y}"
+            val found = findCutout(display, size)
+            if (found == null) {
+                OLog.i("no usable top-edge cutout in this orientation, island hidden")
+                lastGeoKey = null
+                detach()
+                return
+            }
+            val cut = found.rect
+            val key = "${cut.left},${cut.top},${cut.right},${cut.bottom},${size.x},${size.y}," +
+                "${found.virtual},${cfg.virtualIdleVisible}"
             if (attached && key == lastGeoKey) return
             lastGeoKey = key
 
-            view.resetToIdle()
-            view.geo = OrbitView.Geo(cut, size.x, size.y)
+            view.applyGeo(OrbitView.Geo(cut, size.x, size.y, found.virtual))
             val r = view.windowRect(false)
             val lp = params ?: createParams(r).also { params = it }
             lp.x = r.left
@@ -131,23 +144,47 @@ class OrbitController(private val ctx: Context) : OrbitView.Host {
             lp.width = r.width()
             lp.height = r.height()
             if (!attached) addWindow(lp) else wm.updateViewLayout(view, lp)
-            OLog.i("geometry applied: cutout=$cut screen=${size.x}x${size.y}")
+            OLog.i("geometry applied: hole=$cut screen=${size.x}x${size.y} virtual=${found.virtual}")
         } catch (t: Throwable) {
             OLog.e("applyGeometry error", t)
         }
     }
 
-    private fun findCutout(display: Display, size: Point): Rect {
+    private fun statusBarHeight(): Int {
+        val id = ctx.resources.getIdentifier("status_bar_height", "dimen", "android")
+        return if (id > 0) ctx.resources.getDimensionPixelSize(id) else dp(24)
+    }
+
+    private fun findCutout(display: Display, size: Point): Found? {
         val cfg = OrbitState.config
         val cx = size.x / 2
         val rects = display.cutout?.boundingRects ?: emptyList()
-        val best = rects
-            .filter { it.top <= 2 && it.width() < size.x / 3 }
-            .minByOrNull { Math.abs(it.centerX() - cx) }
-        // Çentik yoksa (emülatör vb.) ekranın üst ortasında sanal bir kamera varsay
-        val r = if (best != null) Rect(best) else Rect(cx - dp(14), dp(10), cx + dp(14), dp(38))
-        r.offset(0, dp(cfg.offsetYdp))
-        return r
+        val r: Rect
+        var virtual = false
+        if (rects.isEmpty()) {
+            // Kamera yok: status bar'ın sağında elips şeklinde sanal ada (3:1)
+            virtual = true
+            val sbH = statusBarHeight()
+            val h = min(dp(24), sbH - dp(6)).coerceAtLeast(dp(16))
+            val w = h * 3
+            val right = size.x - dp(16)
+            val top = ((sbH - h) / 2).coerceAtLeast(0)
+            r = Rect(right - w, top, right, top + h)
+        } else {
+            // Android çentikleri bir kenara bağlı bölge olarak bildirir: üst kenara değen en küçük/merkeze yakın olanı al
+            val best = rects
+                .filter { it.top <= 2 && it.width() < size.x * 2 / 5 }
+                .minByOrNull { Math.abs(it.centerX() - cx) }
+                ?: return null
+            // Kenara bağlı kısım delikten yüksekse deliği sadece alt kısımdaki kare olarak al
+            r = if (best.height() > best.width() * 1.15f) {
+                Rect(best.left, best.bottom - best.width(), best.right, best.bottom)
+            } else {
+                Rect(best)
+            }
+        }
+        r.offset(dp(cfg.offsetXdp), dp(cfg.offsetYdp))
+        return Found(r, virtual)
     }
 
     private fun createParams(r: Rect): WindowManager.LayoutParams {

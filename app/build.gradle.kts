@@ -3,6 +3,10 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+// Imzalama bilgisi GitHub Actions'tan ortam değişkeni olarak gelir (bkz. .github/workflows/build.yml).
+// Anahtar yoksa (yerel build, fork) release APK debug anahtarıyla imzalanır, build bozulmaz.
+val keystorePath: String? = System.getenv("ORBIT_KEYSTORE_PATH")?.takeIf { File(it).exists() }
+
 android {
     namespace = "app.orbit.island"
     compileSdk = 35
@@ -11,14 +15,36 @@ android {
         applicationId = "app.orbit.island"
         minSdk = 34
         targetSdk = 34
-        versionCode = 1
+        // Her Actions çalışmasında artar, böylece yeni APK eskisinin üstüne güncelleme olarak kurulur.
+        versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
         versionName = "0.1.0"
+    }
+
+    signingConfigs {
+        if (keystorePath != null) {
+            create("release") {
+                storeFile = File(keystorePath)
+                storePassword = System.getenv("ORBIT_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("ORBIT_KEY_ALIAS")
+                keyPassword = System.getenv("ORBIT_KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = if (keystorePath != null) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
+    }
+
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
     }
 
     compileOptions {

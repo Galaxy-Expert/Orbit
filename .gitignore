@@ -5,3 +5,7 @@
 build/
 captures/
 .DS_Store
+*.jks
+*.keystore
+*.b64
+dist/
