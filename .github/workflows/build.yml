@@ -51,16 +51,31 @@ jobs:
           gradle-version: 8.10.2
 
       # Anahtar GitHub Secrets'tan okunur. Yoksa APK debug anahtarıyla imzalanır (uyarı verir).
+      # Secret iki kez base64 kodlanmışsa otomatik düzeltilir, sonra keytool ile doğrulanır.
       - name: Decode signing key
         env:
           KEYSTORE_B64: ${{ secrets.ORBIT_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ORBIT_KEYSTORE_PASSWORD }}
         run: |
-          if [ -n "$KEYSTORE_B64" ]; then
-            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/orbit.jks"
-            echo "ORBIT_KEYSTORE_PATH=$RUNNER_TEMP/orbit.jks" >> "$GITHUB_ENV"
-          else
+          if [ -z "$KEYSTORE_B64" ]; then
             echo "::warning::ORBIT_KEYSTORE_BASE64 secret not set: APK will be signed with a throwaway debug key and will NOT update over a previous install."
+            exit 0
           fi
+          JKS="$RUNNER_TEMP/orbit.jks"
+          printf '%s' "$KEYSTORE_B64" | tr -d ' \r\n\t' | base64 -d > "$JKS"
+          if head -c 3 "$JKS" | grep -q '^MII'; then
+            echo "::warning::Secret was base64-encoded twice, decoding again"
+            tr -d ' \r\n\t' < "$JKS" | base64 -d > "$JKS.2"
+            mv "$JKS.2" "$JKS"
+          fi
+          echo "Keystore size: $(stat -c%s "$JKS") bytes"
+          if ! keytool -list -keystore "$JKS" -storepass "$KEYSTORE_PASSWORD" > "$RUNNER_TEMP/kt.txt" 2>&1; then
+            cat "$RUNNER_TEMP/kt.txt"
+            echo "::error::keytool could not open the keystore: ORBIT_KEYSTORE_PASSWORD is wrong or ORBIT_KEYSTORE_BASE64 is corrupted"
+            exit 1
+          fi
+          head -n 8 "$RUNNER_TEMP/kt.txt"
+          echo "ORBIT_KEYSTORE_PATH=$JKS" >> "$GITHUB_ENV"
 
       - name: Build release APK
         env:
