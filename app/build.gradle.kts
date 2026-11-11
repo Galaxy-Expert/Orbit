@@ -17,7 +17,7 @@ android {
         targetSdk = 34
         // Her Actions çalışmasında artar, böylece yeni APK eskisinin üstüne güncelleme olarak kurulur.
         versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
-        versionName = "0.1.0"
+        versionName = "0.1.1"
     }
 
     signingConfigs {

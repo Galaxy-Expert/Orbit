@@ -14,6 +14,12 @@ data class OrbitConfig(
     val offsetXdp: Int = 0,
     val offsetYdp: Int = 0,
     val virtualIdleVisible: Boolean = true,
+    val idleBattery: Boolean = true,
+    val tapAction: Int = 0, // 0 = gizlenen ikonları göster, 1 = menü aç (uzun basış diğeri)
+    val revealSec: Int = 5,
+    val animSpeedPct: Int = 100,
+    val haptics: Boolean = true,
+    val notifWidthDp: Int = 380,
     val accent: Int = DEFAULT_ACCENT
 ) {
     fun toBundle(): Bundle = Bundle().apply {
@@ -25,6 +31,12 @@ data class OrbitConfig(
         putInt("offsetXdp", offsetXdp)
         putInt("offsetYdp", offsetYdp)
         putBoolean("virtualIdleVisible", virtualIdleVisible)
+        putBoolean("idleBattery", idleBattery)
+        putInt("tapAction", tapAction)
+        putInt("revealSec", revealSec)
+        putInt("animSpeedPct", animSpeedPct)
+        putBoolean("haptics", haptics)
+        putInt("notifWidthDp", notifWidthDp)
         putInt("accent", accent)
     }
 
@@ -42,6 +54,12 @@ data class OrbitConfig(
                 offsetXdp = b.getInt("offsetXdp", d.offsetXdp),
                 offsetYdp = b.getInt("offsetYdp", d.offsetYdp),
                 virtualIdleVisible = b.getBoolean("virtualIdleVisible", d.virtualIdleVisible),
+                idleBattery = b.getBoolean("idleBattery", d.idleBattery),
+                tapAction = b.getInt("tapAction", d.tapAction),
+                revealSec = b.getInt("revealSec", d.revealSec),
+                animSpeedPct = b.getInt("animSpeedPct", d.animSpeedPct),
+                haptics = b.getBoolean("haptics", d.haptics),
+                notifWidthDp = b.getInt("notifWidthDp", d.notifWidthDp),
                 accent = b.getInt("accent", d.accent)
             )
         }
@@ -66,6 +84,12 @@ object Prefs {
             offsetXdp = p.getInt("offsetXdp", d.offsetXdp),
             offsetYdp = p.getInt("offsetYdp", d.offsetYdp),
             virtualIdleVisible = p.getBoolean("virtualIdleVisible", d.virtualIdleVisible),
+            idleBattery = p.getBoolean("idleBattery", d.idleBattery),
+            tapAction = p.getInt("tapAction", d.tapAction),
+            revealSec = p.getInt("revealSec", d.revealSec),
+            animSpeedPct = p.getInt("animSpeedPct", d.animSpeedPct),
+            haptics = p.getBoolean("haptics", d.haptics),
+            notifWidthDp = p.getInt("notifWidthDp", d.notifWidthDp),
             accent = p.getInt("accent", d.accent)
         )
     }
@@ -80,6 +104,12 @@ object Prefs {
             .putInt("offsetXdp", c.offsetXdp)
             .putInt("offsetYdp", c.offsetYdp)
             .putBoolean("virtualIdleVisible", c.virtualIdleVisible)
+            .putBoolean("idleBattery", c.idleBattery)
+            .putInt("tapAction", c.tapAction)
+            .putInt("revealSec", c.revealSec)
+            .putInt("animSpeedPct", c.animSpeedPct)
+            .putBoolean("haptics", c.haptics)
+            .putInt("notifWidthDp", c.notifWidthDp)
             .putInt("accent", c.accent)
             .apply()
         // SystemUI'ye "ayarlar değişti" haberi

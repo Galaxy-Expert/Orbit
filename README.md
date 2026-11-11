@@ -3,7 +3,7 @@
 Dynamic-island style notifications **around your camera cutout** for AOSP-based ROMs.
 An open-source Xposed module for **Vector (LSPosed)**.
 
-> Status: **0.1 alpha**. Target: **LineageOS 23.2 (Android 16)**. Older Android versions are not planned.
+> Status: **0.1.1 alpha**. Target: **LineageOS 23.2 (Android 16)**. Older Android versions are not planned.
 
 ## Camera layouts
 
@@ -14,18 +14,22 @@ An open-source Xposed module for **Vector (LSPosed)**.
 | **No camera cutout** (tablets, older phones) | A black **capsule (ellipse)** at the right of the status bar acts as the island |
 | Cutout not on the top edge (e.g. phone in landscape) | Island is hidden |
 
-## What 0.1 does
+## What it does (0.1.1)
 
 - Black pill that hugs the camera cutout (position auto-detected, fine-tune offsets in the app)
-- Every few seconds a short **orbit ring** spins around the camera (or around the capsule)
+- **Battery %** is shown in the idle island (both sides of a centered camera, one side for off-center cameras, inside the capsule when there is no camera); green while charging, red when low
+- Every few seconds a short **orbit ring** spins around the island (color and interval are configurable)
 - System heads-up notifications are replaced by an island animation (spring); tap to open, swipe up to dismiss
-- Tap the camera area for a small menu: **Notifications** (opens the shade) and **Settings**
-- Status bar icons are hidden, the **clock stays**
+- **Tap** the island: the hidden status bar icons reappear for a few seconds (the island replaces them, so they are hidden by default). **Long press**: small menu with **Notifications** and **Settings**. You can swap the two in the app.
+- Status bar icons are hidden on the home/app status bar **and on the lock screen**; the **clock stays**
 - Old notifications stay in the normal notification shade
 - Calls, alarms, ongoing/foreground-service and full-screen notifications are left to the system on purpose
-- Nothing is shown on the lock screen
+- No notifications are shown in the island on the lock screen
 
-Not in 0.1: media, calls, charging, per-app filters.
+Settings: tap action, reveal duration, idle battery on/off, ring color/interval, animation speed,
+notification width/duration, haptics, position offsets.
+
+Not yet: media, calls, charging animation, per-app filters.
 
 ## Install
 
@@ -68,7 +72,9 @@ status bar ids were found:
 | `hooked SystemUIApplication.onCreate` | fallback start trigger is installed |
 | `PhoneStatusBarView hooks: N` | N = 0 means the status bar class changed |
 | `status bar id '...': found/missing` | which icon containers could be hidden |
-| `...HeadsUpManager.showNotification hooks: N` | N = 0 means heads-up is not intercepted |
+| `hooked <class>.showNotification(...)` | heads-up interception is active. If this line is missing the system heads-up is not blocked |
+| `scan found N candidate classes: ...` | classes found by the dex scan (HeadsUpManager / *StatusBarView) |
+| `status bar view <class>: N hooks` | which status bar views (home / lock screen) were hooked |
 | `window added (type=2024)` | island window was created |
 | `geometry applied: hole=... virtual=...` | detected camera position / virtual capsule |
 

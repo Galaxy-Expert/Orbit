@@ -11,6 +11,7 @@ import android.graphics.PixelFormat
 import android.graphics.Point
 import android.graphics.Rect
 import android.hardware.display.DisplayManager
+import android.os.BatteryManager
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -68,6 +69,10 @@ class OrbitController(private val ctx: Context) : OrbitView.Host {
                     addAction(Intent.ACTION_USER_PRESENT)
                 }
                 ctx.registerReceiver(refreshReceiver, filter, Context.RECEIVER_EXPORTED)
+                val sticky = ctx.registerReceiver(
+                    batteryReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED), Context.RECEIVER_EXPORTED
+                )
+                if (sticky != null) handleBattery(sticky)
                 dm.registerDisplayListener(displayListener, main)
                 applyGeometry()
                 if (!gotConfig) main.postDelayed(retryConfig, 20_000L)
@@ -97,6 +102,25 @@ class OrbitController(private val ctx: Context) : OrbitView.Host {
             applyGeometry()
             view.rescheduleSpin()
         }
+    }
+
+    private val batteryReceiver = object : BroadcastReceiver() {
+        override fun onReceive(c: Context, i: Intent) {
+            handleBattery(i)
+        }
+    }
+
+    private fun handleBattery(i: Intent) {
+        val level = i.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+        val scale = i.getIntExtra(BatteryManager.EXTRA_SCALE, 100)
+        val plugged = i.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0)
+        val status = i.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
+        val pct = if (level >= 0 && scale > 0) level * 100 / scale else -1
+        val chg = plugged != 0 || status == BatteryManager.BATTERY_STATUS_CHARGING
+        val had = view.hasBattery
+        view.setBattery(pct, chg)
+        // Pil bilgisi ilk kez geldiğinde kanatlar oluşur, pencere boyutu değişir
+        if (had != view.hasBattery) applyGeometry()
     }
 
     private val displayListener = object : DisplayManager.DisplayListener {
@@ -132,7 +156,7 @@ class OrbitController(private val ctx: Context) : OrbitView.Host {
             }
             val cut = found.rect
             val key = "${cut.left},${cut.top},${cut.right},${cut.bottom},${size.x},${size.y}," +
-                "${found.virtual},${cfg.virtualIdleVisible}"
+                "${found.virtual},${cfg.virtualIdleVisible},${cfg.idleBattery},${view.hasBattery}"
             if (attached && key == lastGeoKey) return
             lastGeoKey = key
 
@@ -284,6 +308,10 @@ class OrbitController(private val ctx: Context) : OrbitView.Host {
         } catch (t: Throwable) {
             OLog.e("expandNotificationsPanel error", t)
         }
+    }
+
+    override fun revealStatus() {
+        StatusBarCleaner.reveal(OrbitState.config.revealSec.coerceIn(2, 15) * 1000L)
     }
 
     override fun openSettings() {
